@@ -42,13 +42,29 @@ alias ccusage-amp="bun /path/to/ccusage/apps/amp/src/index.ts"
 
 **注意**：将 `/path/to/ccusage` 替换为你的实际克隆路径。
 
-### 4. 生效配置
+### 4. 删除全局安装的官方版本
+
+如果之前通过 npm/pnpm 全局安装过官方版本，需要先删除，否则全局命令会优先于 shell alias：
+
+```bash
+# 检查是否存在全局安装
+which ccusage
+which ccusage-amp
+
+# 删除 npm 全局安装的 ccusage
+npm uninstall -g ccusage
+
+# 删除 pnpm 全局安装的 @ccusage/amp
+pnpm remove -g @ccusage/amp
+```
+
+### 5. 生效配置
 
 ```bash
 source ~/.zshrc
 ```
 
-### 5. 验证
+### 6. 验证
 
 ```bash
 ccusage daily
