@@ -159,7 +159,7 @@ function convertLedgerEventToUsageEvent(
 		outputTokens,
 		cacheCreationInputTokens,
 		cacheReadInputTokens,
-		totalTokens: inputTokens + outputTokens,
+		totalTokens: inputTokens + outputTokens + cacheCreationInputTokens + cacheReadInputTokens,
 	};
 }
 
@@ -197,7 +197,7 @@ function convertMessageUsageToUsageEvent(
 		outputTokens,
 		cacheCreationInputTokens,
 		cacheReadInputTokens,
-		totalTokens: inputTokens + outputTokens,
+		totalTokens: inputTokens + outputTokens + cacheCreationInputTokens + cacheReadInputTokens,
 	};
 }
 
