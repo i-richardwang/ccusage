@@ -60,6 +60,7 @@
 Amp thread files have the following structure:
 
 **Current format (since ~Jan 13, 2026):**
+
 ```json
 {
 	"id": "T-{uuid}",
@@ -84,6 +85,7 @@ Amp thread files have the following structure:
 ```
 
 **Legacy format (before ~Jan 13, 2026):**
+
 ```json
 {
 	"id": "T-{uuid}",

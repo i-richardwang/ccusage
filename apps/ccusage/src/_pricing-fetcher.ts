@@ -11,6 +11,17 @@ const CLAUDE_PROVIDER_PREFIXES = [
 	'openrouter/openai/',
 ];
 
+/**
+ * Model aliases for Claude Code model names that don't exist in LiteLLM.
+ * Maps model names used by Claude Code to equivalent LiteLLM model names.
+ */
+const CLAUDE_MODEL_ALIASES = new Map<string, string>([
+	// Claude Code uses anthropic/claude-opus-4.6, but LiteLLM has claude-opus-4-6
+	['anthropic/claude-opus-4.6', 'claude-opus-4-6'],
+	// Claude Code uses anthropic/claude-haiku-4.5, but LiteLLM has claude-haiku-4-5
+	['anthropic/claude-haiku-4.5', 'claude-haiku-4-5'],
+]);
+
 const PREFETCHED_CLAUDE_PRICING = prefetchClaudePricing();
 
 export class PricingFetcher extends LiteLLMPricingFetcher {
@@ -21,6 +32,33 @@ export class PricingFetcher extends LiteLLMPricingFetcher {
 			logger,
 			providerPrefixes: CLAUDE_PROVIDER_PREFIXES,
 		});
+	}
+
+	/**
+	 * Resolve model name using aliases if direct lookup fails
+	 */
+	override async getModelPricing(
+		modelName: string,
+	): Result.ResultAsync<import('@ccusage/internal/pricing').LiteLLMModelPricing | null, Error> {
+		// First try direct lookup
+		const directResult = await super.getModelPricing(modelName);
+		if (Result.isFailure(directResult)) {
+			return directResult;
+		}
+
+		// If found, return it
+		if (directResult.value != null) {
+			return directResult;
+		}
+
+		// Try alias lookup
+		const alias = CLAUDE_MODEL_ALIASES.get(modelName);
+		if (alias != null) {
+			logger.debug(`Using alias for model ${modelName} -> ${alias}`);
+			return super.getModelPricing(alias);
+		}
+
+		return directResult;
 	}
 }
 
@@ -45,6 +83,20 @@ if (import.meta.vitest != null) {
 			);
 
 			expect(cost).toBeGreaterThan(0);
+		});
+
+		it('resolves anthropic/claude-opus-4.6 via alias to claude-opus-4-6', async () => {
+			using fetcher = new PricingFetcher(true);
+			const pricing = await Result.unwrap(fetcher.getModelPricing('anthropic/claude-opus-4.6'));
+			expect(pricing).not.toBeNull();
+			expect(pricing?.input_cost_per_token).toBeGreaterThan(0);
+		});
+
+		it('resolves anthropic/claude-haiku-4.5 via alias to claude-haiku-4-5', async () => {
+			using fetcher = new PricingFetcher(true);
+			const pricing = await Result.unwrap(fetcher.getModelPricing('anthropic/claude-haiku-4.5'));
+			expect(pricing).not.toBeNull();
+			expect(pricing?.input_cost_per_token).toBeGreaterThan(0);
 		});
 	});
 }
