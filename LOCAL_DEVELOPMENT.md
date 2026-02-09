@@ -1,6 +1,11 @@
 # 本地开发版本配置指南
 
-本文档说明如何在本地使用修改后的 `@ccusage/amp` 版本。
+本文档说明如何在本地使用修改后的 ccusage 系列工具。
+
+## 本地版本包含的修复
+
+- **ccusage**: 修复 `anthropic/claude-opus-4.6` 和 `anthropic/claude-haiku-4.5` 价格计算为 0 的问题
+- **ccusage-amp**: 支持 Amp 新版数据格式（使用 `message.usage` 替代 `usageLedger.events`）
 
 ## 前置要求
 
@@ -28,7 +33,10 @@ pnpm install
 在 `~/.zshrc`（或 `~/.bashrc`）中添加：
 
 ```bash
-# ccusage-amp local development
+# ccusage local development (Claude Code usage)
+alias ccusage="bun /path/to/ccusage/apps/ccusage/src/index.ts"
+
+# ccusage-amp local development (Amp usage)
 alias ccusage-amp="bun /path/to/ccusage/apps/amp/src/index.ts"
 ```
 
@@ -43,12 +51,23 @@ source ~/.zshrc
 ### 5. 验证
 
 ```bash
+ccusage daily
 ccusage-amp daily
 ```
 
 ## 使用说明
 
-配置完成后，直接运行以下命令即可：
+### ccusage (Claude Code 用量统计)
+
+```bash
+ccusage daily      # 每日报告
+ccusage monthly    # 每月报告
+ccusage session    # 按会话报告
+ccusage blocks     # 5小时计费块报告
+ccusage --help     # 查看帮助
+```
+
+### ccusage-amp (Amp 用量统计)
 
 ```bash
 ccusage-amp daily      # 每日报告
