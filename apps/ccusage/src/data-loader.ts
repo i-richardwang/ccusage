@@ -41,7 +41,7 @@ import {
 	getDayNumber,
 	sortByDate,
 } from './_date-utils.ts';
-import { PricingFetcher } from './_pricing-fetcher.ts';
+import { CLAUDE_MODEL_ALIASES, PricingFetcher } from './_pricing-fetcher.ts';
 import { identifySessionBlocks } from './_session-blocks.ts';
 import {
 	activityDateSchema,
@@ -348,6 +348,10 @@ type TokenStats = {
 	cost: number;
 };
 
+function normalizeModelName(name: string): string {
+	return CLAUDE_MODEL_ALIASES.get(name) ?? name;
+}
+
 /**
  * Aggregates token counts and costs by model name
  */
@@ -367,12 +371,13 @@ function aggregateByModel<T>(
 	};
 
 	for (const entry of entries) {
-		const modelName = getModel(entry) ?? 'unknown';
+		const rawModelName = getModel(entry) ?? 'unknown';
 		// Skip synthetic model
-		if (modelName === '<synthetic>') {
+		if (rawModelName === '<synthetic>') {
 			continue;
 		}
 
+		const modelName = normalizeModelName(rawModelName);
 		const usage = getUsage(entry);
 		const cost = getCost(entry);
 
@@ -409,9 +414,10 @@ function aggregateModelBreakdowns(breakdowns: ModelBreakdown[]): Map<string, Tok
 			continue;
 		}
 
-		const existing = modelAggregates.get(breakdown.modelName) ?? defaultStats;
+		const modelName = normalizeModelName(breakdown.modelName);
+		const existing = modelAggregates.get(modelName) ?? defaultStats;
 
-		modelAggregates.set(breakdown.modelName, {
+		modelAggregates.set(modelName, {
 			inputTokens: existing.inputTokens + breakdown.inputTokens,
 			outputTokens: existing.outputTokens + breakdown.outputTokens,
 			cacheCreationTokens: existing.cacheCreationTokens + breakdown.cacheCreationTokens,
@@ -512,7 +518,12 @@ function extractUniqueModels<T>(
 	entries: T[],
 	getModel: (entry: T) => string | undefined,
 ): string[] {
-	return uniq(entries.map(getModel).filter((m): m is string => m != null && m !== '<synthetic>'));
+	return uniq(
+		entries
+			.map(getModel)
+			.filter((m): m is string => m != null && m !== '<synthetic>')
+			.map(normalizeModelName),
+	);
 }
 
 /**

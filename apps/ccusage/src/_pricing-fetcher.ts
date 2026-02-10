@@ -15,7 +15,7 @@ const CLAUDE_PROVIDER_PREFIXES = [
  * Model aliases for Claude Code model names that don't exist in LiteLLM.
  * Maps model names used by Claude Code to equivalent LiteLLM model names.
  */
-const CLAUDE_MODEL_ALIASES = new Map<string, string>([
+export const CLAUDE_MODEL_ALIASES = new Map<string, string>([
 	// Claude Code uses anthropic/claude-opus-4.6, but LiteLLM has claude-opus-4-6
 	['anthropic/claude-opus-4.6', 'claude-opus-4-6'],
 	// Claude Code uses anthropic/claude-haiku-4.5, but LiteLLM has claude-haiku-4-5
