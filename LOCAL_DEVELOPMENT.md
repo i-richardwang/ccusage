@@ -6,6 +6,8 @@
 
 - **ccusage**: 修复 `anthropic/claude-opus-4.6` 和 `anthropic/claude-haiku-4.5` 价格计算为 0 的问题
 - **ccusage-amp**: 支持 Amp 新版数据格式（使用 `message.usage` 替代 `usageLedger.events`）
+- **ccusage-opencode**: 为 `daily --json` 输出添加 `modelBreakdowns` 按模型明细
+- **ccusage-amp**: 为 `daily --json` 输出添加 `modelBreakdowns` 按模型明细
 
 ## 前置要求
 
@@ -38,6 +40,9 @@ alias ccusage="bun /path/to/ccusage/apps/ccusage/src/index.ts"
 
 # ccusage-amp local development (Amp usage)
 alias ccusage-amp="bun /path/to/ccusage/apps/amp/src/index.ts"
+
+# ccusage-opencode local development (OpenCode usage)
+alias ccusage-opencode="bun /path/to/ccusage/apps/opencode/src/index.ts"
 ```
 
 **注意**：将 `/path/to/ccusage` 替换为你的实际克隆路径。
@@ -50,12 +55,16 @@ alias ccusage-amp="bun /path/to/ccusage/apps/amp/src/index.ts"
 # 检查是否存在全局安装
 which ccusage
 which ccusage-amp
+which ccusage-opencode
 
 # 删除 npm 全局安装的 ccusage
 npm uninstall -g ccusage
 
 # 删除 pnpm 全局安装的 @ccusage/amp
 pnpm remove -g @ccusage/amp
+
+# 删除 pnpm 全局安装的 @ccusage/opencode
+pnpm remove -g @ccusage/opencode
 ```
 
 ### 5. 生效配置
@@ -69,6 +78,7 @@ source ~/.zshrc
 ```bash
 ccusage daily
 ccusage-amp daily
+ccusage-opencode daily
 ```
 
 ## 使用说明
@@ -90,6 +100,15 @@ ccusage-amp daily      # 每日报告
 ccusage-amp monthly    # 每月报告
 ccusage-amp session    # 按会话报告
 ccusage-amp --help     # 查看帮助
+```
+
+### ccusage-opencode (OpenCode 用量统计)
+
+```bash
+ccusage-opencode daily      # 每日报告
+ccusage-opencode monthly    # 每月报告
+ccusage-opencode session    # 按会话报告
+ccusage-opencode --help     # 查看帮助
 ```
 
 ## 修改代码后

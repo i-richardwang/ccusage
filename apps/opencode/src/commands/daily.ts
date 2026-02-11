@@ -57,6 +57,14 @@ export const dailyCommand = define({
 			totalTokens: number;
 			totalCost: number;
 			modelsUsed: string[];
+			modelBreakdowns: Array<{
+				modelName: string;
+				inputTokens: number;
+				outputTokens: number;
+				cacheCreationTokens: number;
+				cacheReadTokens: number;
+				cost: number;
+			}>;
 		}> = [];
 
 		for (const [date, dayEntries] of Object.entries(entriesByDate)) {
@@ -66,17 +74,49 @@ export const dailyCommand = define({
 			let cacheReadTokens = 0;
 			let totalCost = 0;
 			const modelsSet = new Set<string>();
+			const modelMap = new Map<
+				string,
+				{
+					inputTokens: number;
+					outputTokens: number;
+					cacheCreationTokens: number;
+					cacheReadTokens: number;
+					cost: number;
+				}
+			>();
 
 			for (const entry of dayEntries) {
 				inputTokens += entry.usage.inputTokens;
 				outputTokens += entry.usage.outputTokens;
 				cacheCreationTokens += entry.usage.cacheCreationInputTokens;
 				cacheReadTokens += entry.usage.cacheReadInputTokens;
-				totalCost += await calculateCostForEntry(entry, fetcher);
+				const entryCost = await calculateCostForEntry(entry, fetcher);
+				totalCost += entryCost;
 				modelsSet.add(entry.model);
+
+				const existing = modelMap.get(entry.model);
+				if (existing != null) {
+					existing.inputTokens += entry.usage.inputTokens;
+					existing.outputTokens += entry.usage.outputTokens;
+					existing.cacheCreationTokens += entry.usage.cacheCreationInputTokens;
+					existing.cacheReadTokens += entry.usage.cacheReadInputTokens;
+					existing.cost += entryCost;
+				} else {
+					modelMap.set(entry.model, {
+						inputTokens: entry.usage.inputTokens,
+						outputTokens: entry.usage.outputTokens,
+						cacheCreationTokens: entry.usage.cacheCreationInputTokens,
+						cacheReadTokens: entry.usage.cacheReadInputTokens,
+						cost: entryCost,
+					});
+				}
 			}
 
 			const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
+
+			const modelBreakdowns = Array.from(modelMap.entries())
+				.map(([modelName, stats]) => ({ modelName, ...stats }))
+				.sort((a, b) => b.cost - a.cost);
 
 			dailyData.push({
 				date,
@@ -87,6 +127,7 @@ export const dailyCommand = define({
 				totalTokens,
 				totalCost,
 				modelsUsed: Array.from(modelsSet),
+				modelBreakdowns,
 			});
 		}
 

@@ -70,6 +70,14 @@ export const dailyCommand = define({
 			credits: number;
 			totalCost: number;
 			modelsUsed: string[];
+			modelBreakdowns: Array<{
+				modelName: string;
+				inputTokens: number;
+				outputTokens: number;
+				cacheCreationTokens: number;
+				cacheReadTokens: number;
+				cost: number;
+			}>;
 		}> = [];
 
 		for (const [date, dayEvents] of eventsByDate) {
@@ -80,6 +88,16 @@ export const dailyCommand = define({
 			let credits = 0;
 			let totalCost = 0;
 			const modelsSet = new Set<string>();
+			const modelMap = new Map<
+				string,
+				{
+					inputTokens: number;
+					outputTokens: number;
+					cacheCreationTokens: number;
+					cacheReadTokens: number;
+					cost: number;
+				}
+			>();
 
 			for (const event of dayEvents) {
 				inputTokens += event.inputTokens;
@@ -96,9 +114,30 @@ export const dailyCommand = define({
 				});
 				totalCost += cost;
 				modelsSet.add(event.model);
+
+				const existing = modelMap.get(event.model);
+				if (existing != null) {
+					existing.inputTokens += event.inputTokens;
+					existing.outputTokens += event.outputTokens;
+					existing.cacheCreationTokens += event.cacheCreationInputTokens;
+					existing.cacheReadTokens += event.cacheReadInputTokens;
+					existing.cost += cost;
+				} else {
+					modelMap.set(event.model, {
+						inputTokens: event.inputTokens,
+						outputTokens: event.outputTokens,
+						cacheCreationTokens: event.cacheCreationInputTokens,
+						cacheReadTokens: event.cacheReadInputTokens,
+						cost,
+					});
+				}
 			}
 
 			const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
+
+			const modelBreakdowns = Array.from(modelMap.entries())
+				.map(([modelName, stats]) => ({ modelName, ...stats }))
+				.sort((a, b) => b.cost - a.cost);
 
 			dailyData.push({
 				date,
@@ -110,6 +149,7 @@ export const dailyCommand = define({
 				credits,
 				totalCost,
 				modelsUsed: Array.from(modelsSet),
+				modelBreakdowns,
 			});
 		}
 
