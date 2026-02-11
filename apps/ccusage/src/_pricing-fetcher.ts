@@ -20,6 +20,8 @@ export const CLAUDE_MODEL_ALIASES = new Map<string, string>([
 	['anthropic/claude-opus-4.6', 'claude-opus-4-6'],
 	// Claude Code uses anthropic/claude-haiku-4.5, but LiteLLM has claude-haiku-4-5
 	['anthropic/claude-haiku-4.5', 'claude-haiku-4-5'],
+	// Claude Code uses anthropic/claude-sonnet-4.5, but LiteLLM has claude-sonnet-4-5-20250929
+	['anthropic/claude-sonnet-4.5', 'claude-sonnet-4-5-20250929'],
 ]);
 
 const PREFETCHED_CLAUDE_PRICING = prefetchClaudePricing();
@@ -95,6 +97,13 @@ if (import.meta.vitest != null) {
 		it('resolves anthropic/claude-haiku-4.5 via alias to claude-haiku-4-5', async () => {
 			using fetcher = new PricingFetcher(true);
 			const pricing = await Result.unwrap(fetcher.getModelPricing('anthropic/claude-haiku-4.5'));
+			expect(pricing).not.toBeNull();
+			expect(pricing?.input_cost_per_token).toBeGreaterThan(0);
+		});
+
+		it('resolves anthropic/claude-sonnet-4.5 via alias to claude-sonnet-4-5-20250929', async () => {
+			using fetcher = new PricingFetcher(true);
+			const pricing = await Result.unwrap(fetcher.getModelPricing('anthropic/claude-sonnet-4.5'));
 			expect(pricing).not.toBeNull();
 			expect(pricing?.input_cost_per_token).toBeGreaterThan(0);
 		});
