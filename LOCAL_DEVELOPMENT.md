@@ -43,6 +43,9 @@ alias ccusage-amp="bun /path/to/ccusage/apps/amp/src/index.ts"
 
 # ccusage-opencode local development (OpenCode usage)
 alias ccusage-opencode="bun /path/to/ccusage/apps/opencode/src/index.ts"
+
+# ccusage-codex local development (Codex usage)
+alias ccusage-codex="bun /path/to/ccusage/apps/codex/src/index.ts"
 ```
 
 **注意**：将 `/path/to/ccusage` 替换为你的实际克隆路径。
@@ -56,6 +59,7 @@ alias ccusage-opencode="bun /path/to/ccusage/apps/opencode/src/index.ts"
 which ccusage
 which ccusage-amp
 which ccusage-opencode
+which ccusage-codex
 
 # 删除 npm 全局安装的 ccusage
 npm uninstall -g ccusage
@@ -65,6 +69,9 @@ pnpm remove -g @ccusage/amp
 
 # 删除 pnpm 全局安装的 @ccusage/opencode
 pnpm remove -g @ccusage/opencode
+
+# 删除 pnpm 全局安装的 @ccusage/codex
+pnpm remove -g @ccusage/codex
 ```
 
 ### 5. 生效配置
@@ -79,6 +86,7 @@ source ~/.zshrc
 ccusage daily
 ccusage-amp daily
 ccusage-opencode daily
+ccusage-codex daily
 ```
 
 ## 使用说明
@@ -109,6 +117,15 @@ ccusage-opencode daily      # 每日报告
 ccusage-opencode monthly    # 每月报告
 ccusage-opencode session    # 按会话报告
 ccusage-opencode --help     # 查看帮助
+```
+
+### ccusage-codex (Codex 用量统计)
+
+```bash
+ccusage-codex daily      # 每日报告
+ccusage-codex monthly    # 每月报告
+ccusage-codex session    # 按会话报告
+ccusage-codex --help     # 查看帮助
 ```
 
 ## 修改代码后
