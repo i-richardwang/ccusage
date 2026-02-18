@@ -2,18 +2,18 @@
  * @fileoverview Data loading utilities for OpenCode usage analysis
  *
  * This module provides functions for loading and parsing OpenCode usage data
- * from JSON message files stored in OpenCode data directories.
- * OpenCode stores usage data in ~/.local/share/opencode/storage/message/
+ * from the SQLite database (opencode.db) in the OpenCode data directory.
+ * OpenCode stores its database at ~/.local/share/opencode/opencode.db
  *
  * @module data-loader
  */
 
-import { readFile } from 'node:fs/promises';
+import type { SqliteDatabase } from './_sqlite.ts';
 import path from 'node:path';
 import process from 'node:process';
-import { isDirectorySync } from 'path-type';
-import { glob } from 'tinyglobby';
+import { isDirectorySync, isFileSync } from 'path-type';
 import * as v from 'valibot';
+import { openSqlite } from './_sqlite.ts';
 
 /**
  * Default OpenCode data directory path (~/.local/share/opencode)
@@ -21,15 +21,9 @@ import * as v from 'valibot';
 const DEFAULT_OPENCODE_PATH = '.local/share/opencode';
 
 /**
- * OpenCode storage subdirectory containing message data
+ * OpenCode SQLite database filename
  */
-const OPENCODE_STORAGE_DIR_NAME = 'storage';
-
-/**
- * OpenCode messages subdirectory within storage
- */
-const OPENCODE_MESSAGES_DIR_NAME = 'message';
-const OPENCODE_SESSIONS_DIR_NAME = 'session';
+const OPENCODE_DB_FILENAME = 'opencode.db';
 
 /**
  * Environment variable for specifying custom OpenCode data directory
@@ -42,64 +36,58 @@ const OPENCODE_CONFIG_DIR_ENV = 'OPENCODE_DATA_DIR';
 const USER_HOME_DIR = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd();
 
 /**
- * Branded Valibot schema for model names
+ * Valibot schema for tokens stored in assistant message JSON data
  */
-const modelNameSchema = v.pipe(
-	v.string(),
-	v.minLength(1, 'Model name cannot be empty'),
-	v.brand('ModelName'),
-);
-
-/**
- * Branded Valibot schema for session IDs
- */
-const sessionIdSchema = v.pipe(
-	v.string(),
-	v.minLength(1, 'Session ID cannot be empty'),
-	v.brand('SessionId'),
-);
-
-/**
- * OpenCode message token structure
- */
-export const openCodeTokensSchema = v.object({
-	input: v.optional(v.number()),
-	output: v.optional(v.number()),
-	reasoning: v.optional(v.number()),
-	cache: v.optional(
-		v.object({
-			read: v.optional(v.number()),
-			write: v.optional(v.number()),
-		}),
-	),
+const assistantTokensSchema = v.object({
+	input: v.number(),
+	output: v.number(),
+	reasoning: v.optional(v.number(), 0),
+	total: v.optional(v.number()),
+	cache: v.object({
+		read: v.number(),
+		write: v.number(),
+	}),
 });
 
 /**
- * OpenCode message data structure
+ * Valibot schema for assistant message data extracted from the `data` JSON column.
+ * Only assistant messages contain token usage and cost information.
  */
-export const openCodeMessageSchema = v.object({
-	id: v.string(),
-	sessionID: v.optional(sessionIdSchema),
-	providerID: v.optional(v.string()),
-	modelID: v.optional(modelNameSchema),
+const assistantMessageDataSchema = v.object({
+	role: v.literal('assistant'),
+	modelID: v.string(),
+	providerID: v.string(),
 	time: v.object({
-		created: v.optional(v.number()),
+		created: v.number(),
 		completed: v.optional(v.number()),
 	}),
-	tokens: v.optional(openCodeTokensSchema),
-	cost: v.optional(v.number()),
-});
-
-export const openCodeSessionSchema = v.object({
-	id: sessionIdSchema,
-	parentID: v.optional(v.nullable(sessionIdSchema)),
-	title: v.optional(v.string()),
-	projectID: v.optional(v.string()),
-	directory: v.optional(v.string()),
+	cost: v.number(),
+	tokens: assistantTokensSchema,
 });
 
 /**
- * Represents a single usage data entry loaded from OpenCode files
+ * Raw row shape returned by the message query
+ */
+type MessageRow = {
+	id: string;
+	session_id: string;
+	time_created: number;
+	data: string;
+};
+
+/**
+ * Raw row shape returned by the session query
+ */
+type SessionRow = {
+	id: string;
+	parent_id: string | null;
+	title: string;
+	project_id: string;
+	directory: string;
+};
+
+/**
+ * Represents a single usage data entry loaded from the OpenCode database
  */
 export type LoadedUsageEntry = {
 	timestamp: Date;
@@ -146,224 +134,231 @@ export function getOpenCodePath(): string | null {
 }
 
 /**
- * Load OpenCode message from JSON file
- * @param filePath - Path to message JSON file
- * @returns Parsed message data or null on failure
+ * Get the path to the OpenCode SQLite database file
+ * @returns Path to opencode.db, or null if not found
  */
-async function loadOpenCodeMessage(
-	filePath: string,
-): Promise<v.InferOutput<typeof openCodeMessageSchema> | null> {
-	try {
-		const content = await readFile(filePath, 'utf-8');
-		const data: unknown = JSON.parse(content);
-		return v.parse(openCodeMessageSchema, data);
-	} catch {
-		return null;
-	}
-}
-
-/**
- * Convert OpenCode message to LoadedUsageEntry
- * @param message - Parsed OpenCode message
- * @returns LoadedUsageEntry suitable for aggregation
- */
-function convertOpenCodeMessageToUsageEntry(
-	message: v.InferOutput<typeof openCodeMessageSchema>,
-): LoadedUsageEntry {
-	const createdMs = message.time.created ?? Date.now();
-
-	return {
-		timestamp: new Date(createdMs),
-		sessionID: message.sessionID ?? 'unknown',
-		usage: {
-			inputTokens: message.tokens?.input ?? 0,
-			outputTokens: message.tokens?.output ?? 0,
-			cacheCreationInputTokens: message.tokens?.cache?.write ?? 0,
-			cacheReadInputTokens: message.tokens?.cache?.read ?? 0,
-		},
-		model: message.modelID ?? 'unknown',
-		costUSD: message.cost ?? null,
-	};
-}
-
-async function loadOpenCodeSession(
-	filePath: string,
-): Promise<v.InferOutput<typeof openCodeSessionSchema> | null> {
-	try {
-		const content = await readFile(filePath, 'utf-8');
-		const data: unknown = JSON.parse(content);
-		return v.parse(openCodeSessionSchema, data);
-	} catch {
-		return null;
-	}
-}
-
-function convertOpenCodeSessionToMetadata(
-	session: v.InferOutput<typeof openCodeSessionSchema>,
-): LoadedSessionMetadata {
-	return {
-		id: session.id,
-		parentID: session.parentID ?? null,
-		title: session.title ?? session.id,
-		projectID: session.projectID ?? 'unknown',
-		directory: session.directory ?? 'unknown',
-	};
-}
-
-export async function loadOpenCodeSessions(): Promise<Map<string, LoadedSessionMetadata>> {
+function getOpenCodeDbPath(): string | null {
 	const openCodePath = getOpenCodePath();
 	if (openCodePath == null) {
-		return new Map();
+		return null;
 	}
 
-	const sessionsDir = path.join(
-		openCodePath,
-		OPENCODE_STORAGE_DIR_NAME,
-		OPENCODE_SESSIONS_DIR_NAME,
-	);
-
-	if (!isDirectorySync(sessionsDir)) {
-		return new Map();
+	const dbPath = path.join(openCodePath, OPENCODE_DB_FILENAME);
+	if (!isFileSync(dbPath)) {
+		return null;
 	}
 
-	const sessionFiles = await glob('**/*.json', {
-		cwd: sessionsDir,
-		absolute: true,
-	});
-
-	const sessionMap = new Map<string, LoadedSessionMetadata>();
-
-	for (const filePath of sessionFiles) {
-		const session = await loadOpenCodeSession(filePath);
-
-		if (session == null) {
-			continue;
-		}
-
-		const metadata = convertOpenCodeSessionToMetadata(session);
-		sessionMap.set(metadata.id, metadata);
-	}
-
-	return sessionMap;
+	return dbPath;
 }
 
 /**
- * Load all OpenCode messages
+ * Open the OpenCode database in read-only mode
+ * @returns Database instance, or null if the database file is not found
+ */
+function openDatabase(): SqliteDatabase | null {
+	const dbPath = getOpenCodeDbPath();
+	if (dbPath == null) {
+		return null;
+	}
+
+	return openSqlite(dbPath);
+}
+
+/**
+ * Convert a parsed assistant message row to LoadedUsageEntry
+ */
+function convertMessageToUsageEntry(
+	row: MessageRow,
+	data: v.InferOutput<typeof assistantMessageDataSchema>,
+): LoadedUsageEntry {
+	return {
+		timestamp: new Date(data.time.created),
+		sessionID: row.session_id,
+		usage: {
+			inputTokens: data.tokens.input,
+			outputTokens: data.tokens.output,
+			cacheCreationInputTokens: data.tokens.cache.write,
+			cacheReadInputTokens: data.tokens.cache.read,
+		},
+		model: data.modelID,
+		costUSD: data.cost > 0 ? data.cost : null,
+	};
+}
+
+/**
+ * Load all OpenCode session metadata from the database
+ * @returns Map of session ID to metadata
+ */
+export function loadOpenCodeSessions(): Map<string, LoadedSessionMetadata> {
+	const db = openDatabase();
+	if (db == null) {
+		return new Map();
+	}
+
+	try {
+		const rows = db
+			.prepare('SELECT id, parent_id, title, project_id, directory FROM session')
+			.all() as SessionRow[];
+
+		const sessionMap = new Map<string, LoadedSessionMetadata>();
+
+		for (const row of rows) {
+			sessionMap.set(row.id, {
+				id: row.id,
+				parentID: row.parent_id,
+				title: row.title !== '' ? row.title : row.id,
+				projectID: row.project_id,
+				directory: row.directory,
+			});
+		}
+
+		return sessionMap;
+	} finally {
+		db.close();
+	}
+}
+
+/**
+ * Load all OpenCode assistant messages with token usage from the database.
+ * Only assistant messages are loaded since they contain cost and token data.
  * @returns Array of LoadedUsageEntry for aggregation
  */
-export async function loadOpenCodeMessages(): Promise<LoadedUsageEntry[]> {
-	const openCodePath = getOpenCodePath();
-	if (openCodePath == null) {
+export function loadOpenCodeMessages(): LoadedUsageEntry[] {
+	const db = openDatabase();
+	if (db == null) {
 		return [];
 	}
 
-	const messagesDir = path.join(
-		openCodePath,
-		OPENCODE_STORAGE_DIR_NAME,
-		OPENCODE_MESSAGES_DIR_NAME,
-	);
+	try {
+		// Use json_extract to filter assistant messages at the SQL level
+		const rows = db
+			.prepare(
+				`SELECT id, session_id, time_created, data FROM message
+			 WHERE json_extract(data, '$.role') = 'assistant'`,
+			)
+			.all() as MessageRow[];
 
-	if (!isDirectorySync(messagesDir)) {
-		return [];
+		const entries: LoadedUsageEntry[] = [];
+
+		for (const row of rows) {
+			const parsed = v.safeParse(assistantMessageDataSchema, JSON.parse(row.data));
+			if (!parsed.success) {
+				continue;
+			}
+
+			const data = parsed.output;
+
+			// Skip messages with zero tokens
+			if (data.tokens.input === 0 && data.tokens.output === 0) {
+				continue;
+			}
+
+			entries.push(convertMessageToUsageEntry(row, data));
+		}
+
+		return entries;
+	} finally {
+		db.close();
 	}
-
-	// Find all message JSON files
-	const messageFiles = await glob('**/*.json', {
-		cwd: messagesDir,
-		absolute: true,
-	});
-
-	const entries: LoadedUsageEntry[] = [];
-	const dedupeSet = new Set<string>();
-
-	for (const filePath of messageFiles) {
-		const message = await loadOpenCodeMessage(filePath);
-
-		if (message == null) {
-			continue;
-		}
-
-		// Skip messages with no tokens
-		if (message.tokens == null || (message.tokens.input === 0 && message.tokens.output === 0)) {
-			continue;
-		}
-
-		// Skip if no provider or model
-		if (message.providerID == null || message.modelID == null) {
-			continue;
-		}
-
-		// Deduplicate by message ID
-		const dedupeKey = `${message.id}`;
-		if (dedupeSet.has(dedupeKey)) {
-			continue;
-		}
-		dedupeSet.add(dedupeKey);
-
-		const entry = convertOpenCodeMessageToUsageEntry(message);
-		entries.push(entry);
-	}
-
-	return entries;
 }
 
 if (import.meta.vitest != null) {
 	const { describe, it, expect } = import.meta.vitest;
 
-	describe('data-loader', () => {
-		it('should convert OpenCode message to LoadedUsageEntry', () => {
-			const message = {
+	describe('convertMessageToUsageEntry', () => {
+		it('should convert a message row with assistant data to LoadedUsageEntry', () => {
+			const row: MessageRow = {
 				id: 'msg_123',
-				sessionID: 'ses_456' as v.InferOutput<typeof sessionIdSchema>,
+				session_id: 'ses_456',
+				time_created: 1700000000000,
+				data: '',
+			};
+
+			const data: v.InferOutput<typeof assistantMessageDataSchema> = {
+				role: 'assistant' as const,
+				modelID: 'anthropic/claude-sonnet-4-5',
 				providerID: 'anthropic',
-				modelID: 'claude-sonnet-4-5' as v.InferOutput<typeof modelNameSchema>,
-				time: {
-					created: 1700000000000,
-					completed: 1700000010000,
-				},
+				time: { created: 1700000000000, completed: 1700000010000 },
+				cost: 0.05,
 				tokens: {
 					input: 100,
 					output: 200,
 					reasoning: 0,
-					cache: {
-						read: 50,
-						write: 25,
-					},
+					cache: { read: 50, write: 25 },
 				},
-				cost: 0.001,
 			};
 
-			const entry = convertOpenCodeMessageToUsageEntry(message);
+			const entry = convertMessageToUsageEntry(row, data);
 
 			expect(entry.sessionID).toBe('ses_456');
 			expect(entry.usage.inputTokens).toBe(100);
 			expect(entry.usage.outputTokens).toBe(200);
 			expect(entry.usage.cacheReadInputTokens).toBe(50);
 			expect(entry.usage.cacheCreationInputTokens).toBe(25);
-			expect(entry.model).toBe('claude-sonnet-4-5');
+			expect(entry.model).toBe('anthropic/claude-sonnet-4-5');
+			expect(entry.costUSD).toBe(0.05);
 		});
 
-		it('should handle missing optional fields', () => {
-			const message = {
-				id: 'msg_123',
+		it('should set costUSD to null when cost is zero', () => {
+			const row: MessageRow = {
+				id: 'msg_789',
+				session_id: 'ses_012',
+				time_created: 1700000000000,
+				data: '',
+			};
+
+			const data: v.InferOutput<typeof assistantMessageDataSchema> = {
+				role: 'assistant' as const,
+				modelID: 'openai/gpt-5.1',
 				providerID: 'openai',
-				modelID: 'gpt-5.1' as v.InferOutput<typeof modelNameSchema>,
-				time: {
-					created: 1700000000000,
-				},
+				time: { created: 1700000000000 },
+				cost: 0,
 				tokens: {
 					input: 50,
 					output: 100,
+					reasoning: 0,
+					cache: { read: 0, write: 0 },
 				},
 			};
 
-			const entry = convertOpenCodeMessageToUsageEntry(message);
+			const entry = convertMessageToUsageEntry(row, data);
 
 			expect(entry.usage.inputTokens).toBe(50);
 			expect(entry.usage.outputTokens).toBe(100);
 			expect(entry.usage.cacheReadInputTokens).toBe(0);
 			expect(entry.usage.cacheCreationInputTokens).toBe(0);
-			expect(entry.costUSD).toBe(null);
+			expect(entry.costUSD).toBeNull();
+		});
+	});
+
+	describe('assistantMessageDataSchema', () => {
+		it('should parse valid assistant message data', () => {
+			const data = {
+				role: 'assistant',
+				modelID: 'anthropic/claude-opus-4.6',
+				providerID: 'zenmux',
+				time: { created: 1770806241551, completed: 1770806307456 },
+				cost: 0.16363825,
+				tokens: {
+					input: 1,
+					output: 4157,
+					reasoning: 0,
+					cache: { read: 90579, write: 2307 },
+				},
+			};
+
+			const result = v.safeParse(assistantMessageDataSchema, data);
+			expect(result.success).toBe(true);
+		});
+
+		it('should reject user message data', () => {
+			const data = {
+				role: 'user',
+				time: { created: 1770806197123 },
+			};
+
+			const result = v.safeParse(assistantMessageDataSchema, data);
+			expect(result.success).toBe(false);
 		});
 	});
 }

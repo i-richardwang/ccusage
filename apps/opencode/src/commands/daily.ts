@@ -33,7 +33,7 @@ export const dailyCommand = define({
 	async run(ctx) {
 		const jsonOutput = Boolean(ctx.values.json);
 
-		const entries = await loadOpenCodeMessages();
+		const entries = loadOpenCodeMessages();
 
 		if (entries.length === 0) {
 			const output = jsonOutput
