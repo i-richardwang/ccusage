@@ -353,6 +353,19 @@ function normalizeModelName(name: string): string {
 }
 
 /**
+ * Checks if a model name refers to a Claude model.
+ * Entries with non-Claude models are filtered out by default since ccusage
+ * is designed to track Claude Code usage specifically.
+ */
+function isClaudeModel(modelName: string): boolean {
+	return (
+		modelName.startsWith('claude-') ||
+		modelName.startsWith('anthropic.claude-') ||
+		modelName.startsWith('anthropic/claude-')
+	);
+}
+
+/**
  * Aggregates token counts and costs by model name
  */
 function aggregateByModel<T>(
@@ -820,6 +833,11 @@ export async function loadDailyUsageData(options?: LoadOptions): Promise<DailyUs
 				// Mark this combination as processed
 				markAsProcessed(uniqueHash, processedHashes);
 
+				// Filter out non-Claude models
+				if (data.message.model != null && !isClaudeModel(data.message.model)) {
+					return;
+				}
+
 				// Always use DEFAULT_LOCALE for date grouping to ensure YYYY-MM-DD format
 				const date = formatDate(data.timestamp, options?.timezone, DEFAULT_LOCALE);
 				// If fetcher is available, calculate cost based on mode and tokens
@@ -985,6 +1003,11 @@ export async function loadSessionData(options?: LoadOptions): Promise<SessionUsa
 
 				// Mark this combination as processed
 				markAsProcessed(uniqueHash, processedHashes);
+
+				// Filter out non-Claude models
+				if (data.message.model != null && !isClaudeModel(data.message.model)) {
+					return;
+				}
 
 				const sessionKey = `${projectPath}/${sessionId}`;
 				const cost =
@@ -1412,6 +1435,11 @@ export async function loadSessionBlockData(options?: LoadOptions): Promise<Sessi
 
 				// Mark this combination as processed
 				markAsProcessed(uniqueHash, processedHashes);
+
+				// Filter out non-Claude models
+				if (data.message.model != null && !isClaudeModel(data.message.model)) {
+					return;
+				}
 
 				const cost =
 					fetcher != null ? await calculateCostForEntry(data, mode, fetcher) : (data.costUSD ?? 0);
@@ -3187,7 +3215,7 @@ invalid json line
 					timestamp: '2024-01-19T10:00:00Z',
 					message: {
 						usage: { input_tokens: 1000, output_tokens: 500 },
-						model: 'unknown-model-xyz',
+						model: 'claude-unknown-test-model',
 					},
 				};
 
@@ -3552,7 +3580,7 @@ invalid json line
 					timestamp: createISOTimestamp('2024-01-01T10:00:00Z'),
 					message: {
 						usage: { input_tokens: 1000, output_tokens: 500 },
-						model: 'some-unknown-model',
+						model: 'claude-unknown-test-model',
 					},
 					costUSD: 0.05,
 				};
