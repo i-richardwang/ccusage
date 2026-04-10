@@ -17,7 +17,7 @@ import { sharedCommandConfig } from '../_shared-args.ts';
 import { calculateTotals, createTotalsObject, getTotalTokens } from '../calculate-cost.ts';
 import { loadSessionData } from '../data-loader.ts';
 import { detectMismatches, printMismatchReport } from '../debug.ts';
-import { log, logger } from '../logger.ts';
+import { log, logger, writeStdout } from '../logger.ts';
 import { handleSessionIdLookup } from './_session_id.ts';
 
 // eslint-disable-next-line ts/no-unused-vars
@@ -76,7 +76,7 @@ export const sessionCommand = define({
 
 		if (sessionData.length === 0) {
 			if (useJson) {
-				log(JSON.stringify([]));
+				writeStdout(JSON.stringify([]));
 			} else {
 				logger.warn('No Claude usage data found.');
 			}
@@ -118,9 +118,9 @@ export const sessionCommand = define({
 					logger.error(jqResult.error.message);
 					process.exit(1);
 				}
-				log(jqResult.value);
+				writeStdout(jqResult.value);
 			} else {
-				log(JSON.stringify(jsonOutput, null, 2));
+				writeStdout(JSON.stringify(jsonOutput, null, 2));
 			}
 		} else {
 			// Print header

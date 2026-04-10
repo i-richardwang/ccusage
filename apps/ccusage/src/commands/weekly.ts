@@ -17,7 +17,7 @@ import { sharedArgs } from '../_shared-args.ts';
 import { calculateTotals, createTotalsObject, getTotalTokens } from '../calculate-cost.ts';
 import { loadWeeklyUsageData } from '../data-loader.ts';
 import { detectMismatches, printMismatchReport } from '../debug.ts';
-import { log, logger } from '../logger.ts';
+import { log, logger, writeStdout } from '../logger.ts';
 
 export const weeklyCommand = define({
 	name: 'weekly',
@@ -59,7 +59,7 @@ export const weeklyCommand = define({
 						totalCost: 0,
 					},
 				};
-				log(JSON.stringify(emptyOutput, null, 2));
+				writeStdout(JSON.stringify(emptyOutput, null, 2));
 			} else {
 				logger.warn('No Claude usage data found.');
 			}
@@ -99,9 +99,9 @@ export const weeklyCommand = define({
 					logger.error(jqResult.error.message);
 					process.exit(1);
 				}
-				log(jqResult.value);
+				writeStdout(jqResult.value);
 			} else {
-				log(JSON.stringify(jsonOutput, null, 2));
+				writeStdout(JSON.stringify(jsonOutput, null, 2));
 			}
 		} else {
 			// Print header

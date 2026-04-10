@@ -26,7 +26,7 @@ import {
 import { sharedCommandConfig } from '../_shared-args.ts';
 import { getTotalTokens } from '../_token-utils.ts';
 import { loadSessionBlockData } from '../data-loader.ts';
-import { log, logger } from '../logger.ts';
+import { log, logger, writeStdout } from '../logger.ts';
 
 /**
  * Formats the time display for a session block
@@ -177,7 +177,7 @@ export const blocksCommand = define({
 
 		if (blocks.length === 0) {
 			if (useJson) {
-				log(JSON.stringify({ blocks: [] }));
+				writeStdout(JSON.stringify({ blocks: [] }));
 			} else {
 				logger.warn('No Claude usage data found.');
 			}
@@ -213,7 +213,7 @@ export const blocksCommand = define({
 			blocks = blocks.filter((block: SessionBlock) => block.isActive);
 			if (blocks.length === 0) {
 				if (useJson) {
-					log(JSON.stringify({ blocks: [], message: 'No active block' }));
+					writeStdout(JSON.stringify({ blocks: [], message: 'No active block' }));
 				} else {
 					logger.info('No active session block found.');
 				}
@@ -273,9 +273,9 @@ export const blocksCommand = define({
 					logger.error(jqResult.error.message);
 					process.exit(1);
 				}
-				log(jqResult.value);
+				writeStdout(jqResult.value);
 			} else {
-				log(JSON.stringify(jsonOutput, null, 2));
+				writeStdout(JSON.stringify(jsonOutput, null, 2));
 			}
 		} else {
 			// Table output

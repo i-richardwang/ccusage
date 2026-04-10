@@ -6,7 +6,7 @@ import { Result } from '@praha/byethrow';
 import { formatDateCompact } from '../_date-utils.ts';
 import { processWithJq } from '../_jq-processor.ts';
 import { loadSessionUsageById } from '../data-loader.ts';
-import { log, logger } from '../logger.ts';
+import { log, logger, writeStdout } from '../logger.ts';
 
 export type SessionIdContext = {
 	values: {
@@ -33,7 +33,7 @@ export async function handleSessionIdLookup(
 
 	if (sessionUsage == null) {
 		if (useJson) {
-			log(JSON.stringify(null));
+			writeStdout(JSON.stringify(null));
 		} else {
 			logger.warn(`No session found with ID: ${ctx.values.id}`);
 		}
@@ -62,9 +62,9 @@ export async function handleSessionIdLookup(
 				logger.error(jqResult.error.message);
 				process.exit(1);
 			}
-			log(jqResult.value);
+			writeStdout(jqResult.value);
 		} else {
-			log(JSON.stringify(jsonOutput, null, 2));
+			writeStdout(JSON.stringify(jsonOutput, null, 2));
 		}
 	} else {
 		logger.box(`Claude Code Session Usage - ${ctx.values.id}`);

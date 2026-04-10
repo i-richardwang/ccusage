@@ -19,7 +19,7 @@ import { sharedCommandConfig } from '../_shared-args.ts';
 import { calculateTotals, createTotalsObject, getTotalTokens } from '../calculate-cost.ts';
 import { loadDailyUsageData } from '../data-loader.ts';
 import { detectMismatches, printMismatchReport } from '../debug.ts';
-import { log, logger } from '../logger.ts';
+import { log, logger, writeStdout } from '../logger.ts';
 
 export const dailyCommand = define({
 	name: 'daily',
@@ -82,7 +82,7 @@ export const dailyCommand = define({
 
 		if (dailyData.length === 0) {
 			if (useJson) {
-				log(JSON.stringify([]));
+				writeStdout(JSON.stringify([]));
 			} else {
 				logger.warn('No Claude usage data found.');
 			}
@@ -129,9 +129,9 @@ export const dailyCommand = define({
 					logger.error(jqResult.error.message);
 					process.exit(1);
 				}
-				log(jqResult.value);
+				writeStdout(jqResult.value);
 			} else {
-				log(JSON.stringify(jsonOutput, null, 2));
+				writeStdout(JSON.stringify(jsonOutput, null, 2));
 			}
 		} else {
 			// Print header
