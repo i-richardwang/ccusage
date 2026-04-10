@@ -580,31 +580,41 @@ async function processJSONLFileByLine(
 }
 
 /**
- * Extract the earliest timestamp from a JSONL file
- * Scans through the file until it finds a valid timestamp
- * Uses streaming to handle large files without loading entire content into memory
+ * Extract the first valid timestamp from a JSONL file
+ * Reads only until the first valid timestamp is found, then stops.
+ * JSONL files are append-only logs, so the first entry is effectively the earliest.
  */
 export async function getEarliestTimestamp(filePath: string): Promise<Date | null> {
 	try {
-		let earliestDate: Date | null = null;
-
-		await processJSONLFileByLine(filePath, (line) => {
-			try {
-				const json = JSON.parse(line) as Record<string, unknown>;
-				if (json.timestamp != null && typeof json.timestamp === 'string') {
-					const date = new Date(json.timestamp);
-					if (!Number.isNaN(date.getTime())) {
-						if (earliestDate == null || date < earliestDate) {
-							earliestDate = date;
-						}
-					}
-				}
-			} catch {
-				// Skip invalid JSON lines
-			}
+		const fileStream = createReadStream(filePath, { encoding: 'utf-8' });
+		const rl = createInterface({
+			input: fileStream,
+			crlfDelay: Number.POSITIVE_INFINITY,
 		});
 
-		return earliestDate;
+		try {
+			for await (const line of rl) {
+				if (line.trim().length === 0) {
+					continue;
+				}
+				try {
+					const json = JSON.parse(line) as Record<string, unknown>;
+					if (json.timestamp != null && typeof json.timestamp === 'string') {
+						const date = new Date(json.timestamp);
+						if (!Number.isNaN(date.getTime())) {
+							return date;
+						}
+					}
+				} catch {
+					// Skip invalid JSON lines
+				}
+			}
+		} finally {
+			rl.close();
+			fileStream.destroy();
+		}
+
+		return null;
 	} catch (error) {
 		// Log file access errors for diagnostics, but continue processing
 		// This ensures files without timestamps or with access issues are sorted to the end
@@ -4330,7 +4340,7 @@ if (import.meta.vitest != null) {
 		});
 
 		describe('getEarliestTimestamp', () => {
-			it('should extract earliest timestamp from JSONL file', async () => {
+			it('should extract first valid timestamp from JSONL file', async () => {
 				const content = [
 					JSON.stringify({ timestamp: '2025-01-15T12:00:00Z', message: { usage: {} } }),
 					JSON.stringify({ timestamp: '2025-01-10T10:00:00Z', message: { usage: {} } }),
@@ -4342,7 +4352,7 @@ if (import.meta.vitest != null) {
 				});
 
 				const timestamp = await getEarliestTimestamp(fixture.getPath('test.jsonl'));
-				expect(timestamp).toEqual(new Date('2025-01-10T10:00:00Z'));
+				expect(timestamp).toEqual(new Date('2025-01-15T12:00:00Z'));
 			});
 
 			it('should handle files without timestamps', async () => {
