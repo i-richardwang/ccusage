@@ -183,11 +183,18 @@ export async function syncThreads(options: SyncOptions = {}): Promise<SyncResult
 	for (const remote of remoteThreads) {
 		const existing = manifest.threads[remote.id];
 
-		// Skip if already synced, message count unchanged, and not forcing
+		// Skip if already synced and not forcing
 		if (existing != null && options.force !== true) {
-			const unchanged =
-				existing.messageCount != null && existing.messageCount === remote.messageCount;
-			if (unchanged) {
+			// If we have a stored messageCount, compare with remote to detect changes
+			if (existing.messageCount != null && existing.messageCount === remote.messageCount) {
+				result.skipped++;
+				continue;
+			}
+			// If no stored messageCount (legacy manifest entry), skip since the thread
+			// file already exists locally — it will be re-synced on the next change
+			if (existing.messageCount == null) {
+				// Backfill messageCount for future incremental checks
+				existing.messageCount = remote.messageCount;
 				result.skipped++;
 				continue;
 			}

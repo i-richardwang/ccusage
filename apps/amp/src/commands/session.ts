@@ -41,16 +41,15 @@ export const sessionCommand = define({
 			type: 'boolean',
 			description: 'Force compact table mode',
 		},
-		sync: {
+		'no-sync': {
 			type: 'boolean',
-			short: 's',
-			description: 'Sync threads from Amp server before generating report',
+			description: 'Skip syncing threads from Amp server before generating report',
 		},
 	},
 	async run(ctx) {
 		const jsonOutput = Boolean(ctx.values.json);
 
-		if (ctx.values.sync === true) {
+		if (ctx.values['no-sync'] !== true) {
 			await migrateExistingThreadsToManifest();
 			await syncThreads({ silent: true });
 		}
