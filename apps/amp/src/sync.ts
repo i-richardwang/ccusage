@@ -16,11 +16,6 @@ import { getAmpPath } from './data-loader.ts';
 import { logger } from './logger.ts';
 
 /**
- * Thread ID pattern: T-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
- */
-const THREAD_ID_RE = /T-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-
-/**
  * Manifest storing sync metadata for each thread
  */
 type SyncManifest = {
@@ -31,6 +26,7 @@ type SyncManifest = {
 			syncedAt: string;
 			updatedAt?: string;
 			v?: number;
+			messageCount?: number;
 		}
 	>;
 };
@@ -79,16 +75,36 @@ async function saveManifest(ampDir: string, manifest: SyncManifest): Promise<voi
 }
 
 /**
- * Get thread IDs from `amp threads list`
+ * Thread info parsed from `amp threads list` output
  */
-async function listRemoteThreadIds(): Promise<string[]> {
+type RemoteThreadInfo = {
+	id: string;
+	messageCount: number;
+};
+
+/**
+ * Pattern to extract message count and thread ID from a single list row.
+ * The Messages column value (a number) appears right before the Thread ID column.
+ */
+const LIST_ROW_RE = /(\d+)\s+(T-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
+
+/**
+ * Get thread info (ID + message count) from `amp threads list`
+ */
+async function listRemoteThreads(): Promise<RemoteThreadInfo[]> {
 	const result = await spawn('amp', ['threads', 'list', '--no-color', '--no-notifications']);
 	const output = result.stdout;
-	const ids = new Set<string>();
-	for (const match of output.matchAll(THREAD_ID_RE)) {
-		ids.add(match[0]);
+	const seen = new Set<string>();
+	const threads: RemoteThreadInfo[] = [];
+	for (const match of output.matchAll(LIST_ROW_RE)) {
+		const id = match[2]!;
+		if (seen.has(id)) {
+			continue;
+		}
+		seen.add(id);
+		threads.push({ id, messageCount: Number(match[1]) });
 	}
-	return [...ids];
+	return threads;
 }
 
 /**
@@ -154,26 +170,35 @@ export async function syncThreads(options: SyncOptions = {}): Promise<SyncResult
 	// Load manifest
 	const manifest = await loadManifest(ampDir);
 
-	// Get remote thread IDs
-	const remoteIds = await listRemoteThreadIds();
+	// Get remote thread info (ID + message count)
+	const remoteThreads = await listRemoteThreads();
 
 	const result: SyncResult = {
 		synced: 0,
 		skipped: 0,
 		failed: 0,
-		total: remoteIds.length,
+		total: remoteThreads.length,
 	};
 
-	for (const threadId of remoteIds) {
-		const existing = manifest.threads[threadId];
+	for (const remote of remoteThreads) {
+		const existing = manifest.threads[remote.id];
 
-		// Skip if already synced and not forcing
+		// Skip if already synced, message count unchanged, and not forcing
 		if (existing != null && options.force !== true) {
-			result.skipped++;
-			continue;
+			const unchanged =
+				existing.messageCount != null && existing.messageCount === remote.messageCount;
+			if (unchanged) {
+				result.skipped++;
+				continue;
+			}
+			logger.debug('Thread changed, re-syncing', {
+				threadId: remote.id,
+				oldMessageCount: existing.messageCount,
+				newMessageCount: remote.messageCount,
+			});
 		}
 
-		const json = await exportThread(threadId);
+		const json = await exportThread(remote.id);
 		if (json == null) {
 			result.failed++;
 			continue;
@@ -183,31 +208,35 @@ export async function syncThreads(options: SyncOptions = {}): Promise<SyncResult
 		const validateResult = Result.try({
 			try: () => {
 				const parsed = JSON.parse(json) as { id?: string };
-				if (parsed.id !== threadId) {
-					throw new Error(`Thread ID mismatch: expected ${threadId}, got ${parsed.id}`);
+				if (parsed.id !== remote.id) {
+					throw new Error(`Thread ID mismatch: expected ${remote.id}, got ${parsed.id}`);
 				}
 			},
 			catch: (error) => error,
 		})();
 
 		if (Result.isFailure(validateResult)) {
-			logger.debug('Invalid exported thread JSON', { threadId, error: validateResult.error });
+			logger.debug('Invalid exported thread JSON', {
+				threadId: remote.id,
+				error: validateResult.error,
+			});
 			result.failed++;
 			continue;
 		}
 
 		// Atomic write: write to temp file, then rename
-		const filePath = path.join(threadsDir, `${threadId}.json`);
+		const filePath = path.join(threadsDir, `${remote.id}.json`);
 		const tmpPath = `${filePath}.tmp`;
 		await writeFile(tmpPath, json);
 		await rename(tmpPath, filePath);
 
 		// Update manifest
 		const meta = extractThreadMeta(json);
-		manifest.threads[threadId] = {
+		manifest.threads[remote.id] = {
 			syncedAt: new Date().toISOString(),
 			updatedAt: meta.updatedAt,
 			v: meta.v,
+			messageCount: remote.messageCount,
 		};
 
 		result.synced++;

@@ -31,7 +31,7 @@ export const log = console.log;
  * exceed 64 KB.
  */
 export function writeStdout(data: string): void {
-	const output = `${data  }\n`;
+	const output = `${data}\n`;
 	const CHUNK = 32768; // 32 KB — well under Bun's 64 KB pipe-write limit
 	for (let i = 0; i < output.length; i += CHUNK) {
 		process.stdout.write(output.slice(i, i + CHUNK));
