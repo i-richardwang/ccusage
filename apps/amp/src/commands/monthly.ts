@@ -11,6 +11,7 @@ import { define } from 'gunshi';
 import pc from 'picocolors';
 import { loadAmpUsageEvents } from '../data-loader.ts';
 import { AmpPricingSource } from '../pricing.ts';
+import { migrateExistingThreadsToManifest, syncThreads } from '../sync.ts';
 
 const TABLE_COLUMN_COUNT = 9;
 
@@ -41,9 +42,19 @@ export const monthlyCommand = define({
 			type: 'boolean',
 			description: 'Force compact table mode',
 		},
+		sync: {
+			type: 'boolean',
+			short: 's',
+			description: 'Sync threads from Amp server before generating report',
+		},
 	},
 	async run(ctx) {
 		const jsonOutput = Boolean(ctx.values.json);
+
+		if (ctx.values.sync === true) {
+			await migrateExistingThreadsToManifest();
+			await syncThreads({ silent: true });
+		}
 
 		const { events } = await loadAmpUsageEvents();
 

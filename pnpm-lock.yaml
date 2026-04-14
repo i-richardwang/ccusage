@@ -255,6 +255,9 @@ importers:
       gunshi:
         specifier: catalog:runtime
         version: 0.26.3
+      nano-spawn:
+        specifier: catalog:runtime
+        version: 1.0.3
       node:
         specifier: runtime:^24.11.0
         version: runtime:24.13.1

@@ -52,6 +52,7 @@
 		"fast-sort": "catalog:runtime",
 		"fs-fixture": "catalog:testing",
 		"gunshi": "catalog:runtime",
+		"nano-spawn": "catalog:runtime",
 		"path-type": "catalog:runtime",
 		"picocolors": "catalog:runtime",
 		"tinyglobby": "catalog:runtime",
