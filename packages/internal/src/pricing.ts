@@ -1,3 +1,4 @@
+import process from 'node:process';
 import { Result } from '@praha/byethrow';
 import * as v from 'valibot';
 
@@ -61,6 +62,7 @@ export type LiteLLMPricingFetcherOptions = {
 	offlineLoader?: () => Promise<Record<string, LiteLLMModelPricing>>;
 	url?: string;
 	providerPrefixes?: string[];
+	customPricingUrl?: string;
 };
 
 const DEFAULT_PROVIDER_PREFIXES = [
@@ -88,11 +90,13 @@ function createLogger(logger?: PricingLogger): PricingLogger {
 
 export class LiteLLMPricingFetcher implements Disposable {
 	private cachedPricing: Map<string, LiteLLMModelPricing> | null = null;
+	private customPricingMerged = false;
 	private readonly logger: PricingLogger;
 	private readonly offline: boolean;
 	private readonly offlineLoader?: () => Promise<Record<string, LiteLLMModelPricing>>;
 	private readonly url: string;
 	private readonly providerPrefixes: string[];
+	private readonly customPricingUrl: string | undefined;
 
 	constructor(options: LiteLLMPricingFetcherOptions = {}) {
 		this.logger = createLogger(options.logger);
@@ -100,6 +104,7 @@ export class LiteLLMPricingFetcher implements Disposable {
 		this.offlineLoader = options.offlineLoader;
 		this.url = options.url ?? LITELLM_PRICING_URL;
 		this.providerPrefixes = options.providerPrefixes ?? DEFAULT_PROVIDER_PREFIXES;
+		this.customPricingUrl = options.customPricingUrl ?? process.env.CUSTOM_PRICING_URL;
 	}
 
 	[Symbol.dispose](): void {
@@ -108,6 +113,7 @@ export class LiteLLMPricingFetcher implements Disposable {
 
 	clearCache(): void {
 		this.cachedPricing = null;
+		this.customPricingMerged = false;
 	}
 
 	private loadOfflinePricing = Result.try({
@@ -140,6 +146,44 @@ export class LiteLLMPricingFetcher implements Disposable {
 				this.logger.error('Original fetch error:', originalError);
 			}),
 		);
+	}
+
+	private async mergeCustomPricing(pricing: Map<string, LiteLLMModelPricing>): Promise<void> {
+		if (this.customPricingUrl == null || this.customPricingUrl === '') {
+			return;
+		}
+
+		try {
+			this.logger.info('Fetching custom pricing data...');
+			const response = await fetch(this.customPricingUrl);
+			if (!response.ok) {
+				this.logger.warn(`Failed to fetch custom pricing: ${response.statusText}`);
+				return;
+			}
+
+			const data = (await response.json()) as Record<string, unknown>;
+			let mergedCount = 0;
+			for (const [modelName, modelData] of Object.entries(data)) {
+				if (pricing.has(modelName)) {
+					continue;
+				}
+				if (typeof modelData !== 'object' || modelData == null) {
+					continue;
+				}
+
+				const parsed = v.safeParse(liteLLMModelPricingSchema, modelData);
+				if (!parsed.success) {
+					continue;
+				}
+
+				pricing.set(modelName, parsed.output);
+				mergedCount++;
+			}
+			this.logger.info(`Merged ${mergedCount} models from custom pricing data`);
+		} catch (error) {
+			this.logger.warn('Failed to fetch custom pricing data');
+			this.logger.debug('Custom pricing fetch error:', error);
+		}
 	}
 
 	private async ensurePricingLoaded(): Result.ResultAsync<Map<string, LiteLLMModelPricing>, Error> {
@@ -193,6 +237,13 @@ export class LiteLLMPricingFetcher implements Disposable {
 					}),
 					Result.orElse(async (error) => this.handleFallbackToCachedPricing(error)),
 				);
+			}),
+			Result.andThen(async (pricing) => {
+				if (!this.customPricingMerged) {
+					await this.mergeCustomPricing(pricing);
+					this.customPricingMerged = true;
+				}
+				return Result.succeed(pricing);
 			}),
 		);
 	}
