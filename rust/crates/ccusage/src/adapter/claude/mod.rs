@@ -365,6 +365,9 @@ fn read_usage_file(
         if !is_valid_usage_entry(&data) {
             continue;
         }
+        if !is_supported_claude_usage_model(data.message.model.as_deref()) {
+            continue;
+        }
         let date = format_date_tz(timestamp, tz);
         let cost = calculate_cost(&data, mode, pricing);
         let missing_pricing_model = missing_pricing_model_for_usage(
@@ -451,6 +454,15 @@ pub(super) fn is_valid_usage_entry(data: &UsageEntry) -> bool {
         return false;
     }
     true
+}
+
+pub(super) fn is_supported_claude_usage_model(model: Option<&str>) -> bool {
+    model.is_none_or(|model| {
+        model == "<synthetic>"
+            || model.starts_with("claude-")
+            || model.starts_with("anthropic.claude-")
+            || model.starts_with("anthropic/claude-")
+    })
 }
 
 pub(super) fn has_unsupported_null_field(line: &[u8]) -> bool {
@@ -563,9 +575,9 @@ mod tests {
 
     use super::{
         extract_session_parts, has_unsupported_null_field, paths::is_project_path_segment,
-        push_deduped_entry, usage_files,
+        push_deduped_entry, read_usage_file, usage_files,
     };
-    use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage};
+    use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode};
     use ccusage_test_support::fs_fixture;
 
     #[test]
@@ -601,6 +613,31 @@ mod tests {
         assert!(!is_project_path_segment("project-a/session-a"));
         assert!(!is_project_path_segment("project-a\\session-a"));
         assert!(is_project_path_segment("project-a"));
+    }
+
+    #[test]
+    fn drops_non_claude_model_usage_entries() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": concat!(
+                r#"{"timestamp":"2026-03-29T07:00:00.000Z","sessionId":"session-a","message":{"id":"msg-gpt","model":"gpt-5","usage":{"input_tokens":100,"output_tokens":10}}}"#,
+                "\n",
+                r#"{"timestamp":"2026-03-29T07:05:00.000Z","sessionId":"session-a","message":{"id":"msg-claude","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":20}}}"#,
+                "\n",
+            ),
+        });
+
+        let loaded = read_usage_file(
+            fixture.path("projects/project-a/session-a.jsonl").as_path(),
+            None,
+            CostMode::Auto,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(
+            loaded.entries[0].data.message.model.as_deref(),
+            Some("claude-sonnet-4-20250514")
+        );
     }
 
     #[test]

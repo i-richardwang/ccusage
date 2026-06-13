@@ -100,6 +100,9 @@ pub(crate) fn message_value_to_entry(
     }
     let model = value.model_id.clone()?;
     let provider = value.provider_id.clone()?;
+    if !is_allowed_provider(&provider) {
+        return None;
+    }
     let millis = value
         .time
         .as_ref()
@@ -151,6 +154,16 @@ pub(crate) fn message_value_to_entry(
         missing_pricing_model,
         data,
     })
+}
+
+/// Only count usage from providers this fork opts into. OpenCode aggregates
+/// many providers, but this fork's reports intentionally track a fixed
+/// allowlist; everything else is dropped at parse time.
+fn is_allowed_provider(provider: &str) -> bool {
+    matches!(
+        provider,
+        "zenmux" | "anthropic" | "fireworks-ai" | "openai" | "ollama-cloud" | "crof"
+    )
 }
 
 fn calculate_open_code_cost(
@@ -413,31 +426,97 @@ mod tests {
     }
 
     #[test]
-    fn calculates_cost_for_k2p6_when_opencode_stores_zero_cost() {
+    fn ignores_kimi_for_coding_provider_messages() {
         let pricing = PricingMap::load_embedded();
-        let entry = message_value_to_entry(
-            &message(json!({
-                "id": "message-a",
-                "sessionID": "session-a",
-                "providerID": "kimi-for-coding",
-                "modelID": "k2p6",
-                "time": { "created": 0 },
-                "tokens": {
-                    "input": 100,
-                    "output": 10,
-                    "cache": { "read": 50 }
-                },
-                "cost": 0
-            })),
-            None,
-            None,
-            None,
-            CostMode::Auto,
-            Some(&pricing),
-        )
-        .unwrap();
+        assert!(
+            message_value_to_entry(
+                &message(json!({
+                    "id": "message-a",
+                    "sessionID": "session-a",
+                    "providerID": "kimi-for-coding",
+                    "modelID": "k2p6",
+                    "time": { "created": 0 },
+                    "tokens": {
+                        "input": 100,
+                        "output": 10,
+                        "cache": { "read": 50 }
+                    },
+                    "cost": 0
+                })),
+                None,
+                None,
+                None,
+                CostMode::Auto,
+                Some(&pricing),
+            )
+            .is_none()
+        );
+    }
 
-        assert_eq!(entry.cost, 0.000143);
+    #[test]
+    fn ignores_github_copilot_provider_messages() {
+        assert!(
+            message_value_to_entry(
+                &message(json!({
+                    "id": "message-a",
+                    "sessionID": "session-a",
+                    "providerID": "github-copilot",
+                    "modelID": "claude-sonnet-4.5",
+                    "time": { "created": 0 },
+                    "tokens": {
+                        "input": 100,
+                        "output": 10,
+                        "cache": { "read": 50 }
+                    },
+                    "cost": 0
+                })),
+                None,
+                None,
+                None,
+                CostMode::Auto,
+                None,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn allows_whitelisted_provider_messages() {
+        for provider in [
+            "zenmux",
+            "anthropic",
+            "fireworks-ai",
+            "openai",
+            "ollama-cloud",
+            "crof",
+        ] {
+            let entry = message_value_to_entry(
+                &message(json!({
+                    "id": "message-a",
+                    "sessionID": "session-a",
+                    "providerID": provider,
+                    "modelID": "claude-sonnet-4-20250514",
+                    "time": { "created": 0 },
+                    "tokens": {
+                        "input": 100,
+                        "output": 10,
+                        "cache": { "read": 50 }
+                    },
+                    "cost": 0
+                })),
+                None,
+                None,
+                None,
+                CostMode::Auto,
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(
+                entry.data.message.model.as_deref(),
+                Some("claude-sonnet-4-20250514")
+            );
+        }
     }
 
     #[test]
@@ -446,7 +525,7 @@ mod tests {
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
-                "github_copilot/claude-sonnet-4-5": {
+                "anthropic/claude-sonnet-4-5": {
                     "input_cost_per_token": 0.125,
                     "output_cost_per_token": 0.25,
                     "cache_read_input_token_cost": 0.0625
@@ -457,7 +536,7 @@ mod tests {
             &message(json!({
                 "id": "message-a",
                 "sessionID": "session-a",
-                "providerID": "github-copilot",
+                "providerID": "anthropic",
                 "modelID": "claude-sonnet-4.5",
                 "time": { "created": 1767312000000i64 },
                 "tokens": {

@@ -20,6 +20,7 @@ use crate::{
 
 use super::{
     chunk_file_indexes_by_size, has_unsupported_null_field, is_semver_prefix,
+    is_supported_claude_usage_model,
     paths::{claude_paths, extract_project, usage_files},
     usage_dedupe_hash,
 };
@@ -275,6 +276,9 @@ fn read_daily_usage_file(
         if !is_valid_daily_usage_entry(&data) {
             continue;
         }
+        if !is_supported_claude_usage_model(data.message.model.as_deref()) {
+            continue;
+        }
         let usage = data.message.usage;
         let cost = calculate_cost_for_usage(
             data.message.model.as_deref(),
@@ -513,8 +517,9 @@ impl DailyAccumulator {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DailyLoadedEntry, push_deduped_daily_entry};
-    use crate::TokenUsageRaw;
+    use super::{DailyLoadedEntry, push_deduped_daily_entry, read_daily_usage_file};
+    use crate::{TokenUsageRaw, cli::CostMode};
+    use ccusage_test_support::fs_fixture;
 
     #[test]
     fn keeps_parent_daily_usage_when_sidechain_replays_message_with_new_request_id() {
@@ -575,6 +580,31 @@ mod tests {
         .into_entry();
 
         assert_eq!(data.is_sidechain, Some(true));
+    }
+
+    #[test]
+    fn drops_non_claude_model_daily_entries() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": concat!(
+                r#"{"timestamp":"2026-03-29T07:00:00.000Z","sessionId":"session-a","message":{"id":"msg-gpt","model":"gpt-5","usage":{"input_tokens":100,"output_tokens":10}}}"#,
+                "\n",
+                r#"{"timestamp":"2026-03-29T07:05:00.000Z","sessionId":"session-a","message":{"id":"msg-claude","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":20}}}"#,
+                "\n",
+            ),
+        });
+
+        let loaded = read_daily_usage_file(
+            fixture.path("projects/project-a/session-a.jsonl").as_path(),
+            None,
+            CostMode::Auto,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(
+            loaded.entries[0].model.as_deref(),
+            Some("claude-sonnet-4-20250514")
+        );
     }
 
     struct DailyEntryFixture {
