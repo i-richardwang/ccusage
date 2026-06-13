@@ -105,6 +105,32 @@ bunx -p https://pkg.pr.new/ccusage/ccusage@<pr-number> ccusage --offline
 
 > [bunx](https://bun.com/docs/pm/bunx) caches the downloaded package, so repeated runs are faster after the first launch.
 
+### Install This Fork
+
+Package runners such as `npx ccusage@latest` and `bunx ccusage` install the upstream npm package. To use this fork's `main` branch, including local patches such as Claude model filtering and OpenCode provider filtering, install the Rust CLI from this repository instead:
+
+```bash
+cargo install --git https://github.com/i-richardwang/ccusage.git --branch main --locked --force ccusage
+```
+
+For a fully pinned install, replace `--branch main` with `--rev <commit-sha>`.
+
+For a local checkout:
+
+```bash
+git clone https://github.com/i-richardwang/ccusage.git
+cd ccusage
+cargo install --path rust/crates/ccusage --locked --force
+```
+
+Make sure `~/.cargo/bin` is on `PATH`, then verify the installed command:
+
+```bash
+command -v ccusage
+ccusage --version
+ccusage daily
+```
+
 ## Usage
 
 ```bash
